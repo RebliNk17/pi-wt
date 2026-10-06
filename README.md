@@ -2,7 +2,7 @@
 
 [![npm version](https://img.shields.io/npm/v/@reblink17/pi-wt?logo=npm)](https://www.npmjs.com/package/@reblink17/pi-wt)
 [![npm downloads](https://img.shields.io/npm/dm/@reblink17/pi-wt)](https://www.npmjs.com/package/@reblink17/pi-wt)
-[![license: MIT](https://img.shields.io/npm/l/@reblink17/pi-wt)](./LICENSE)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 Claude-Code-style git worktrees for [pi](https://github.com/earendil-works/pi).
 
@@ -73,7 +73,7 @@ pi.events.on("pi-wt:changed", (wt) => {
 
 - Redirection covers pi's built-in tools. Tools from other extensions that take paths are not rewritten.
 - Redirection is a convenience, not a sandbox. A bash command can still reach any path you could reach yourself.
-- The keep/remove prompt appears after pi's TUI has closed, as a plain terminal prompt. It only appears when stdin is a TTY.
+- The quit picker runs after pi's TUI has closed, directly in the terminal. It only appears when stdin is a TTY; otherwise the worktree is kept.
 
 ## License
 
