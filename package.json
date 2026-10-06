@@ -1,6 +1,6 @@
 {
 	"name": "@reblink17/pi-wt",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "Claude-Code-style git worktrees for pi: the agent enters a worktree when it starts work, exits when done, and you choose keep/remove on quit.",
 	"keywords": [
 		"pi-package",
