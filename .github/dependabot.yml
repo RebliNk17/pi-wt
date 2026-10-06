@@ -14,3 +14,7 @@ updates:
     groups:
       dev-dependencies:
         dependency-type: development
+    ignore:
+      # Types must match the oldest supported Node (engines: >=22.19).
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
