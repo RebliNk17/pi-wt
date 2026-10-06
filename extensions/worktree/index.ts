@@ -12,7 +12,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as readline from "node:readline/promises";
+import * as os from "node:os";
 import { StringEnum } from "@earendil-works/pi-ai";
 import {
 	type BashOperations,
@@ -44,6 +44,7 @@ import {
 	slugify,
 	timestampName,
 } from "./paths.ts";
+import { color, select } from "./prompt.ts";
 
 const STATE_ENTRY = "pi-wt-state";
 const STATUS_KEY = "worktree";
@@ -91,6 +92,8 @@ export default function piWorktree(pi: ExtensionAPI) {
 		active = next;
 		if (persist) pi.appendEntry(STATE_ENTRY, next ?? null);
 		ctx.ui.setStatus(STATUS_KEY, next ? ctx.ui.theme.fg("accent", `🌿 ${next.name}`) : undefined);
+		// Lets custom footers/statuslines follow the worktree (branch, PR, etc.).
+		pi.events.emit("pi-wt:changed", next ? { name: next.name, path: next.path, branch: next.branch } : null);
 	}
 
 	async function loadRepo(cwd: string): Promise<Repo | undefined> {
@@ -354,6 +357,7 @@ export default function piWorktree(pi: ExtensionAPI) {
 		repo = await loadRepo(ctx.cwd);
 		active = undefined;
 		ctx.ui.setStatus(STATUS_KEY, undefined);
+		pi.events.emit("pi-wt:changed", null);
 		if (!repo) return;
 
 		// Restore the latest state from this session branch (resume, reload, fork).
@@ -389,30 +393,44 @@ export default function piWorktree(pi: ExtensionAPI) {
 			return;
 		}
 		// The TUI is already stopped here, so ask on the raw terminal.
+		const home = os.homedir();
+		const tilde = (p: string) => (p.startsWith(home + path.sep) ? `~${p.slice(home.length)}` : p);
 		if (!process.stdin.isTTY || !process.stderr.isTTY) {
-			process.stderr.write(`Worktree kept at ${wt.path} (branch ${wt.branch}).\n`);
+			process.stderr.write(`Worktree kept at ${tilde(wt.path)} (branch ${wt.branch}).\n`);
 			return;
 		}
-		if (process.stdin.isRaw) process.stdin.setRawMode(false);
-		const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
-		let remove = false;
-		try {
-			const warn = changes.dirty ? `\x1b[33m⚠ It has ${changes.summary}; removing discards them.\x1b[0m\n` : "";
-			const answer = await rl.question(
-				`\n🌿 Worktree "${wt.name}" is still active at ${wt.path} (branch ${wt.branch}).\n${warn}Keep or remove it? [K]eep / [r]emove: `,
-			);
-			remove = /^r(emove)?$/i.test(answer.trim());
-		} finally {
-			rl.close();
-		}
+
+		const { bold, dim, green, yellow, cyan, red } = color;
+		const header = [
+			"",
+			`  🌿 ${bold("Worktree still active")}`,
+			"",
+			`     ${dim("name  ")} ${cyan(wt.name)}`,
+			`     ${dim("branch")} ${wt.branch}`,
+			`     ${dim("path  ")} ${tilde(wt.path)}`,
+			...(changes.dirty ? ["", `     ${yellow(`⚠  ${changes.summary} — removing discards them`)}`] : []),
+			"",
+			`  ${bold("Remove this worktree?")} ${dim("(↑/↓ to choose, enter to confirm)")}`,
+		];
+		const remove = await select(
+			header,
+			[
+				{ label: "No", hint: "keep it on disk", value: false },
+				{ label: "Yes", hint: wt.createdBranch ? "delete worktree and branch" : "delete worktree", value: true },
+			],
+			0,
+			false,
+		);
+
 		if (!remove) {
-			process.stderr.write(`Kept ${wt.path}\n`);
+			process.stderr.write(`\n  ${green("✔")} Kept ${dim(tilde(wt.path))}\n\n`);
 			return;
 		}
 		try {
-			process.stderr.write(`${await removeWorktree(wt, changes.dirty)}\n`);
+			await removeWorktree(wt, changes.dirty);
+			process.stderr.write(`\n  ${green("✔")} Removed worktree ${cyan(wt.name)}${wt.createdBranch ? " and its branch" : ""}\n\n`);
 		} catch (error) {
-			process.stderr.write(`${(error as Error).message}\n`);
+			process.stderr.write(`\n  ${red("✖")} ${(error as Error).message}\n\n`);
 		}
 	});
 

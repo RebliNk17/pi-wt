@@ -6,6 +6,8 @@ import * as path from "node:path";
 import { test } from "node:test";
 import piWorktree from "../extensions/worktree/index.ts";
 
+process.env.PI_CODING_AGENT_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "piwt-agent-"));
+
 function setup() {
 	const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "piwt-")));
 	const g = (...a: string[]) => execFileSync("git", a, { cwd: repo, encoding: "utf-8" }).trim();
@@ -27,6 +29,7 @@ function setup() {
 		registerTool: (t: any) => tools.set(t.name, t),
 		registerCommand() {},
 		registerFlag() {},
+		events: { emit() {}, on: () => () => {} },
 		getFlag: () => undefined,
 		appendEntry: (customType: string, data: unknown) => entries.push({ type: "custom", customType, data }),
 		on: (ev: string, h: any) => handlers.set(ev, [...(handlers.get(ev) ?? []), h]),

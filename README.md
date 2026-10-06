@@ -4,7 +4,7 @@ Claude-Code-style git worktrees for [pi](https://github.com/earendil-works/pi).
 
 - **The agent decides.** When it starts a task that changes code, it calls `enter_worktree`. When the task is done, it calls `exit_worktree`.
 - **No session switching.** While a worktree is active, every built-in tool runs inside it: `read`, `write`, `edit`, `grep`, `find`, `ls`, `bash`, and your own `!` commands. Absolute paths that point at the original checkout are redirected into the worktree too.
-- **Asks on quit.** If a worktree this session created is still active when you quit, pi asks whether to keep or remove it. It warns you about uncommitted changes and unmerged commits.
+- **Asks on quit.** If a worktree this session created is still active when you quit, pi asks "Remove this worktree?" with a ↑/↓ No/Yes picker (default No). It warns you about uncommitted changes and unmerged commits.
 - **Survives resume.** The active worktree is stored in the session, so `pi -c` and `/resume` pick it up again.
 
 ## Install
@@ -52,6 +52,16 @@ Settings are read from `~/.pi/agent/worktree.json`. A per-repo `<repo>/.pi/workt
 - `policy`:
   - `auto` (the default): the agent uses worktrees for code changes on its own.
   - `on-request`: the agent uses worktrees only when you ask.
+
+## Custom footers
+
+pi's built-in footer shows the `🌿 <name>` status automatically. Custom footers (`ctx.ui.setFooter`) can listen for changes:
+
+```ts
+pi.events.on("pi-wt:changed", (wt) => {
+  // wt: { name, path, branch } | null
+});
+```
 
 ## Limitations
 
