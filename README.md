@@ -1,8 +1,8 @@
 # pi-wt
 
-[![npm version](https://img.shields.io/npm/v/pi-wt?logo=npm)](https://www.npmjs.com/package/pi-wt)
-[![npm downloads](https://img.shields.io/npm/dm/pi-wt)](https://www.npmjs.com/package/pi-wt)
-[![license: MIT](https://img.shields.io/npm/l/pi-wt)](./LICENSE)
+[![npm version](https://img.shields.io/npm/v/@reblink17/pi-wt?logo=npm)](https://www.npmjs.com/package/@reblink17/pi-wt)
+[![npm downloads](https://img.shields.io/npm/dm/@reblink17/pi-wt)](https://www.npmjs.com/package/@reblink17/pi-wt)
+[![license: MIT](https://img.shields.io/npm/l/@reblink17/pi-wt)](./LICENSE)
 
 Claude-Code-style git worktrees for [pi](https://github.com/earendil-works/pi).
 
@@ -14,7 +14,7 @@ Claude-Code-style git worktrees for [pi](https://github.com/earendil-works/pi).
 ## Install
 
 ```bash
-pi install npm:pi-wt
+pi install npm:@reblink17/pi-wt
 ```
 
 Or straight from GitHub: `pi install https://github.com/RebliNk17/pi-wt`
