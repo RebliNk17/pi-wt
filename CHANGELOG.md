@@ -4,7 +4,11 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## Unreleased
 
-- CI, trusted npm publishing, lint, and contributor docs.
+## 0.1.1
+
+- Published as `@reblink17/pi-wt` (install with `pi install npm:@reblink17/pi-wt`).
+- README: badges, development section.
+- CI, trusted npm publishing with provenance, Biome lint, and contributor docs.
 
 ## 0.1.0
 
