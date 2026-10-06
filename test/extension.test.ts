@@ -36,7 +36,11 @@ function setup() {
 	};
 	const ctx: any = {
 		cwd: repo,
-		ui: { setStatus: (k: string, v?: string) => statuses.set(k, v), notify() {}, theme: { fg: (_: string, s: string) => s } },
+		ui: {
+			setStatus: (k: string, v?: string) => statuses.set(k, v),
+			notify() {},
+			theme: { fg: (_: string, s: string) => s },
+		},
 		sessionManager: { getBranch: () => entries },
 	};
 	piWorktree(pi);
@@ -78,9 +82,17 @@ test("enter, redirect, exit remove", async () => {
 	assert.match(prompt.systemPromptOptions.sections.worktree!, /inside git worktree/);
 
 	fs.writeFileSync(path.join(wt.path, "b.txt"), "b\n");
-	await assert.rejects(tools.get("exit_worktree").execute("2", { action: "remove" }, undefined, undefined, ctx), /uncommitted/);
-	await assert.rejects(tools.get("enter_worktree").execute("3", { name: "y" }, undefined, undefined, ctx), /Already in worktree/);
-	const out = await tools.get("exit_worktree").execute("4", { action: "remove", discard_changes: true }, undefined, undefined, ctx);
+	await assert.rejects(
+		tools.get("exit_worktree").execute("2", { action: "remove" }, undefined, undefined, ctx),
+		/uncommitted/,
+	);
+	await assert.rejects(
+		tools.get("enter_worktree").execute("3", { name: "y" }, undefined, undefined, ctx),
+		/Already in worktree/,
+	);
+	const out = await tools
+		.get("exit_worktree")
+		.execute("4", { action: "remove", discard_changes: true }, undefined, undefined, ctx);
 	assert.match(out.content[0].text, /Removed worktree .* and branch feat-x/);
 	assert.ok(!fs.existsSync(wt.path));
 	assert.equal(g("branch", "--list", "feat-x"), "");
@@ -105,6 +117,9 @@ test("keep, resume restores, reuse existing", async () => {
 	const again = await tools.get("enter_worktree").execute("3", { name: "keepme" }, undefined, undefined, ctx);
 	assert.match(again.content[0].text, /Reusing existing worktree/);
 	assert.equal(again.details.worktree.created, false);
-	await assert.rejects(tools.get("exit_worktree").execute("4", { action: "remove" }, undefined, undefined, ctx), /not created by this session/);
+	await assert.rejects(
+		tools.get("exit_worktree").execute("4", { action: "remove" }, undefined, undefined, ctx),
+		/not created by this session/,
+	);
 	fs.rmSync(repo, { recursive: true, force: true });
 });

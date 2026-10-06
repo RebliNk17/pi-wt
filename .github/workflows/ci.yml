@@ -35,5 +35,6 @@ jobs:
         if: matrix.pi == 'latest'
         run: npm install --no-save @earendil-works/pi-coding-agent@latest @earendil-works/pi-ai@latest typebox@latest
 
+      - run: npm run lint
       - run: npm run typecheck
       - run: npm test

@@ -1,52 +1,60 @@
 {
-  "name": "@reblink17/pi-wt",
-  "version": "0.1.0",
-  "description": "Claude-Code-style git worktrees for pi: the agent enters a worktree when it starts work, exits when done, and you choose keep/remove on quit.",
-  "keywords": [
-    "pi-package",
-    "pi-extension",
-    "pi",
-    "worktree",
-    "git"
-  ],
-  "homepage": "https://github.com/RebliNk17/pi-wt#readme",
-  "bugs": {
-    "url": "https://github.com/RebliNk17/pi-wt/issues"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/RebliNk17/pi-wt.git"
-  },
-  "license": "MIT",
-  "author": "Shai Cohen",
-  "type": "module",
-  "files": [
-    "extensions",
-    "README.md",
-    "LICENSE"
-  ],
-  "pi": {
-    "extensions": [
-      "./extensions/worktree/index.ts"
-    ]
-  },
-  "scripts": {
-    "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test test/*.test.ts"
-  },
-  "peerDependencies": {
-    "@earendil-works/pi-ai": "*",
-    "@earendil-works/pi-coding-agent": "*",
-    "typebox": "*"
-  },
-  "devDependencies": {
-    "@earendil-works/pi-ai": "^1.0.4",
-    "@earendil-works/pi-coding-agent": "^1.0.4",
-    "@types/node": "^22.10.2",
-    "typebox": "^1.1.38",
-    "typescript": "^5.7.2"
-  },
-  "publishConfig": {
-    "access": "public"
-  }
+	"name": "@reblink17/pi-wt",
+	"version": "0.1.0",
+	"description": "Claude-Code-style git worktrees for pi: the agent enters a worktree when it starts work, exits when done, and you choose keep/remove on quit.",
+	"keywords": [
+		"pi-package",
+		"pi-extension",
+		"pi",
+		"worktree",
+		"git"
+	],
+	"homepage": "https://github.com/RebliNk17/pi-wt#readme",
+	"bugs": {
+		"url": "https://github.com/RebliNk17/pi-wt/issues"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/RebliNk17/pi-wt.git"
+	},
+	"license": "MIT",
+	"author": "Shai Cohen",
+	"type": "module",
+	"files": [
+		"extensions",
+		"README.md",
+		"LICENSE",
+		"CHANGELOG.md"
+	],
+	"pi": {
+		"extensions": [
+			"./extensions/worktree/index.ts"
+		]
+	},
+	"scripts": {
+		"lint": "biome check .",
+		"format": "biome check --write .",
+		"typecheck": "tsc --noEmit",
+		"test": "node --experimental-strip-types --test test/*.test.ts",
+		"check": "npm run lint && npm run typecheck && npm test"
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-ai": "*",
+		"@earendil-works/pi-coding-agent": "*",
+		"typebox": "*"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.5.15",
+		"@earendil-works/pi-ai": "^1.0.4",
+		"@earendil-works/pi-coding-agent": "^1.0.4",
+		"@types/node": "^22.10.2",
+		"typebox": "^1.1.38",
+		"typescript": "^5.7.2"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"engines": {
+		"node": ">=22.19.0"
+	}
 }

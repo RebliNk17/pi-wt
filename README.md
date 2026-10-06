@@ -80,12 +80,11 @@ pi.events.on("pi-wt:changed", (wt) => {
 
 ```bash
 npm ci
-npm run typecheck
-npm test
+npm run check   # lint + typecheck + tests
 pi -e ./extensions/worktree/index.ts   # try local changes
 ```
 
-Release: `npm version patch|minor|major && git push --follow-tags`. The `Publish` workflow tests the tag and publishes it to npm with provenance.
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the project layout and release steps.
 
 ## License
 

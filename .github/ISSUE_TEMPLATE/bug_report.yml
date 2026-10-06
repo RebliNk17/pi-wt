@@ -1,0 +1,43 @@
+name: Bug report
+description: Something in pi-wt does not work as expected
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. pi --wt
+        2. ask the agent to ...
+        3. ...
+  - type: input
+    id: pi-version
+    attributes:
+      label: pi version
+      description: Output of `pi --version`
+    validations:
+      required: true
+  - type: input
+    id: pi-wt-version
+    attributes:
+      label: pi-wt version
+      description: From `pi list`, or the commit if installed from git
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS and shell
+      placeholder: macOS 15, zsh
+  - type: textarea
+    id: config
+    attributes:
+      label: worktree.json (if any)
+      render: json

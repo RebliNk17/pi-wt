@@ -12,7 +12,8 @@ export interface RunResult {
 export function run(file: string, args: string[], cwd: string, timeoutMs = 60_000): Promise<RunResult> {
 	return new Promise((resolve) => {
 		execFile(file, args, { cwd, timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 }, (error, stdout, stderr) => {
-			const code = error ? (typeof (error as NodeJS.ErrnoException).code === "number" ? Number((error as any).code) : 1) : 0;
+			const errCode: unknown = error ? (error as { code?: unknown }).code : 0;
+			const code = typeof errCode === "number" ? errCode : error ? 1 : 0;
 			resolve({ code, stdout: String(stdout), stderr: String(stderr || (error && !stderr ? error.message : "")) });
 		});
 	});

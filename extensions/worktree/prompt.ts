@@ -76,7 +76,7 @@ export function select<T>(header: string[], choices: Choice<T>[], initial: numbe
 					return draw(false);
 				case "return":
 				case "enter":
-					return finish(choices[index]!.value);
+					return finish(choices[index]?.value ?? fallback);
 				case "escape":
 					return finish(fallback);
 				case "y":

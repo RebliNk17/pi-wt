@@ -11,8 +11,8 @@
  */
 
 import * as fs from "node:fs";
-import * as path from "node:path";
 import * as os from "node:os";
+import * as path from "node:path";
 import { StringEnum } from "@earendil-works/pi-ai";
 import {
 	type BashOperations,
@@ -113,7 +113,10 @@ export default function piWorktree(pi: ExtensionAPI) {
 		if (!isWithin(r.worktreesRoot, r.mainRoot)) return;
 		const rel = `/${path.relative(r.mainRoot, r.worktreesRoot).split(path.sep).join("/")}/`;
 		try {
-			const excludePath = await gitOut(["rev-parse", "--path-format=absolute", "--git-path", "info/exclude"], r.mainRoot);
+			const excludePath = await gitOut(
+				["rev-parse", "--path-format=absolute", "--git-path", "info/exclude"],
+				r.mainRoot,
+			);
 			const content = fs.existsSync(excludePath) ? fs.readFileSync(excludePath, "utf-8") : "";
 			if (content.split(/\r?\n/).some((l) => l.trim() === rel)) return;
 			fs.mkdirSync(path.dirname(excludePath), { recursive: true });
@@ -168,7 +171,9 @@ export default function piWorktree(pi: ExtensionAPI) {
 
 			fs.mkdirSync(path.dirname(wtPath), { recursive: true });
 			await ensureIgnored(r);
-			const args = hasBranch ? ["worktree", "add", wtPath, branch] : ["worktree", "add", "-b", branch, wtPath, baseCommit];
+			const args = hasBranch
+				? ["worktree", "add", wtPath, branch]
+				: ["worktree", "add", "-b", branch, wtPath, baseCommit];
 			const res = await git(args, r.mainRoot, 300_000);
 			if (res.code !== 0) throw new Error(`git worktree add failed: ${(res.stderr || res.stdout).trim()}`);
 
@@ -190,7 +195,10 @@ export default function piWorktree(pi: ExtensionAPI) {
 
 			const patterns = [...r.config.copy, ...readWorktreeInclude(r.mainRoot)];
 			const copied = await copyUntracked(r.repoRoot, wt.path, patterns);
-			if (copied.length > 0) notes.push(`Copied ${copied.length} untracked file(s): ${copied.slice(0, 10).join(", ")}${copied.length > 10 ? ", …" : ""}`);
+			if (copied.length > 0)
+				notes.push(
+					`Copied ${copied.length} untracked file(s): ${copied.slice(0, 10).join(", ")}${copied.length > 10 ? ", …" : ""}`,
+				);
 
 			if (r.config.setup) {
 				ctx.ui.notify(`pi-wt: running setup in ${name}…`, "info");
@@ -262,9 +270,14 @@ export default function piWorktree(pi: ExtensionAPI) {
 		promptSnippet: "Create/enter an isolated git worktree for the current task",
 		parameters: Type.Object({
 			name: Type.Optional(
-				Type.String({ description: "Short name for the worktree and its branch, e.g. a ticket id or 'fix-login-bug'. Random if omitted." }),
+				Type.String({
+					description:
+						"Short name for the worktree and its branch, e.g. a ticket id or 'fix-login-bug'. Random if omitted.",
+				}),
 			),
-			base: Type.Optional(Type.String({ description: "Ref to branch from. Defaults to HEAD of the current checkout." })),
+			base: Type.Optional(
+				Type.String({ description: "Ref to branch from. Defaults to HEAD of the current checkout." }),
+			),
 		}),
 		executionMode: "sequential",
 		async execute(_id, params, _signal, _onUpdate, ctx) {
@@ -282,7 +295,9 @@ export default function piWorktree(pi: ExtensionAPI) {
 		promptSnippet: "Leave the active worktree (keep or remove it)",
 		parameters: Type.Object({
 			action: StringEnum(["keep", "remove"] as const),
-			discard_changes: Type.Optional(Type.Boolean({ description: "Required to remove a worktree with uncommitted changes or unmerged commits." })),
+			discard_changes: Type.Optional(
+				Type.Boolean({ description: "Required to remove a worktree with uncommitted changes or unmerged commits." }),
+			),
 		}),
 		executionMode: "sequential",
 		async execute(_id, params, _signal, _onUpdate, ctx) {
@@ -312,7 +327,7 @@ export default function piWorktree(pi: ExtensionAPI) {
 		}
 	});
 
-	pi.on("user_bash", (event) => {
+	pi.on("user_bash", () => {
 		const m = mapping();
 		if (!m) return;
 		localBash ??= createLocalBashOperations();
@@ -349,8 +364,15 @@ export default function piWorktree(pi: ExtensionAPI) {
 
 	// --------------------------------------------------------------- lifecycle
 
-	pi.registerFlag("worktree", { description: "Start the session in a new git worktree with this name", type: "string" });
-	pi.registerFlag("wt", { description: "Start the session in a new git worktree (auto-named)", type: "boolean", default: false });
+	pi.registerFlag("worktree", {
+		description: "Start the session in a new git worktree with this name",
+		type: "string",
+	});
+	pi.registerFlag("wt", {
+		description: "Start the session in a new git worktree (auto-named)",
+		type: "boolean",
+		default: false,
+	});
 
 	pi.on("session_start", async (event, ctx) => {
 		sessionCwd = ctx.cwd;
@@ -428,7 +450,9 @@ export default function piWorktree(pi: ExtensionAPI) {
 		}
 		try {
 			await removeWorktree(wt, changes.dirty);
-			process.stderr.write(`\n  ${green("✔")} Removed worktree ${cyan(wt.name)}${wt.createdBranch ? " and its branch" : ""}\n\n`);
+			process.stderr.write(
+				`\n  ${green("✔")} Removed worktree ${cyan(wt.name)}${wt.createdBranch ? " and its branch" : ""}\n\n`,
+			);
 		} catch (error) {
 			process.stderr.write(`\n  ${red("✖")} ${(error as Error).message}\n\n`);
 		}
@@ -463,7 +487,8 @@ export default function piWorktree(pi: ExtensionAPI) {
 				} else if (sub === "list") {
 					const r = requireRepo();
 					const lines = (await listWorktrees(r.mainRoot)).map(
-						(w) => `${active && path.resolve(w.path) === path.resolve(active.path) ? "▶" : " "} ${w.branch ?? "(detached)"}  ${w.path}${w.prunable ? "  [prunable]" : ""}`,
+						(w) =>
+							`${active && path.resolve(w.path) === path.resolve(active.path) ? "▶" : " "} ${w.branch ?? "(detached)"}  ${w.path}${w.prunable ? "  [prunable]" : ""}`,
 					);
 					ctx.ui.notify(lines.join("\n"), "info");
 				} else if (active) {

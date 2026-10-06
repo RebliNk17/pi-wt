@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { mapPath, resolveRoot, rewriteCommand, slugify } from "../extensions/worktree/paths.ts";
 
-const m = { repoRoot: "/r/app", worktree: "/r/app/.pi/worktrees/x", cwd: "/r/app/.pi/worktrees/x/src", excluded: ["/r/app/.pi/worktrees"] };
+const m = {
+	repoRoot: "/r/app",
+	worktree: "/r/app/.pi/worktrees/x",
+	cwd: "/r/app/.pi/worktrees/x/src",
+	excluded: ["/r/app/.pi/worktrees"],
+};
 
 test("mapPath", () => {
 	assert.equal(mapPath("a.ts", m), "/r/app/.pi/worktrees/x/src/a.ts");
@@ -17,7 +22,10 @@ test("mapPath", () => {
 });
 
 test("rewriteCommand", () => {
-	assert.equal(rewriteCommand("cat /r/app/a.ts && ls '/r/app/b'", m), "cat /r/app/.pi/worktrees/x/a.ts && ls '/r/app/.pi/worktrees/x/b'");
+	assert.equal(
+		rewriteCommand("cat /r/app/a.ts && ls '/r/app/b'", m),
+		"cat /r/app/.pi/worktrees/x/a.ts && ls '/r/app/.pi/worktrees/x/b'",
+	);
 	assert.equal(rewriteCommand("cd /r/app; ls /r/application", m), "cd /r/app/.pi/worktrees/x; ls /r/application");
 });
 
