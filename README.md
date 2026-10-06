@@ -10,8 +10,10 @@ Claude-Code-style git worktrees for [pi](https://github.com/earendil-works/pi).
 ## Install
 
 ```bash
-pi install git:github.com/RebliNk17/pi-wt
+pi install npm:pi-wt
 ```
+
+Or straight from GitHub: `pi install https://github.com/RebliNk17/pi-wt`
 
 ## Usage
 
