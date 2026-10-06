@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  schedule:
+    # Weekly, against the latest pi release, to catch upstream breakage early.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (node ${{ matrix.node }}, pi ${{ matrix.pi }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+        pi: [locked, latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Use latest pi
+        if: matrix.pi == 'latest'
+        run: npm install --no-save @earendil-works/pi-coding-agent@latest @earendil-works/pi-ai@latest typebox@latest
+
+      - run: npm run typecheck
+      - run: npm test
