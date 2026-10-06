@@ -1,5 +1,9 @@
 # pi-wt
 
+[![npm version](https://img.shields.io/npm/v/pi-wt?logo=npm)](https://www.npmjs.com/package/pi-wt)
+[![npm downloads](https://img.shields.io/npm/dm/pi-wt)](https://www.npmjs.com/package/pi-wt)
+[![license: MIT](https://img.shields.io/npm/l/pi-wt)](./LICENSE)
+
 Claude-Code-style git worktrees for [pi](https://github.com/earendil-works/pi).
 
 - **The agent decides.** When it starts a task that changes code, it calls `enter_worktree`. When the task is done, it calls `exit_worktree`.
