@@ -103,6 +103,94 @@ export async function worktreeStatus(wtPath: string, base?: string): Promise<Wor
 	return { changes: status ? status.split("\n") : [], newCommits };
 }
 
+export interface BranchInfo {
+	/** Commit the branch points at. */
+	tip: string;
+	upstream?: string;
+	/** Branch name on the remote (`feature-x` for `refs/heads/feature-x`). */
+	remoteBranch?: string;
+	ahead: number;
+	behind: number;
+	/** Upstream is configured but no longer exists (typically: PR merged and remote branch deleted). */
+	gone: boolean;
+	/** Committer date of the tip, unix seconds. */
+	time?: number;
+	subject?: string;
+}
+
+/** Every local branch with upstream tracking and its last commit, in one `for-each-ref` call. */
+export async function listBranches(cwd: string): Promise<Map<string, BranchInfo>> {
+	const fmt =
+		"%(refname)%00%(objectname)%00%(upstream:short)%00%(upstream:remoteref)%00%(upstream:track)%00%(committerdate:unix)%00%(contents:subject)";
+	const r = await git(["for-each-ref", "refs/heads", `--format=${fmt}`], cwd);
+	const out = new Map<string, BranchInfo>();
+	if (r.code !== 0) return out;
+	for (const line of r.stdout.split("\n")) {
+		if (!line) continue;
+		const [ref = "", tip = "", upstream, remoteRef, track = "", time, subject] = line.split("\0");
+		out.set(ref.replace(/^refs\/heads\//, ""), {
+			tip,
+			upstream: upstream || undefined,
+			remoteBranch: remoteRef?.replace(/^refs\/heads\//, "") || undefined,
+			ahead: Number(/ahead (\d+)/.exec(track)?.[1] ?? 0),
+			behind: Number(/behind (\d+)/.exec(track)?.[1] ?? 0),
+			gone: track.includes("gone"),
+			time: Number(time) || undefined,
+			subject: subject || undefined,
+		});
+	}
+	return out;
+}
+
+/** `git branch --edit-description` texts, keyed by branch. */
+export async function branchDescriptions(cwd: string): Promise<Map<string, string>> {
+	const r = await git(["config", "-z", "--get-regexp", "^branch\\..*\\.description$"], cwd);
+	const out = new Map<string, string>();
+	if (r.code !== 0) return out;
+	for (const rec of r.stdout.split("\0")) {
+		const nl = rec.indexOf("\n");
+		if (nl < 0) continue;
+		const value = rec.slice(nl + 1).trim();
+		if (value) out.set(rec.slice("branch.".length, nl - ".description".length), value);
+	}
+	return out;
+}
+
+/** The repo's default branch (e.g. `origin/main`), if one can be found. */
+export async function defaultBaseRef(cwd: string): Promise<string | undefined> {
+	const r = await git(["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"], cwd);
+	if (r.code === 0 && r.stdout.trim()) return r.stdout.trim();
+	for (const b of ["main", "master"]) if (await branchExists(b, cwd)) return b;
+	return undefined;
+}
+
+/** Local branches whose tip is contained in `base`. */
+export async function mergedInto(base: string, cwd: string): Promise<Set<string>> {
+	const r = await git(["branch", "--merged", base, "--format=%(refname)"], cwd);
+	if (r.code !== 0) return new Set();
+	return new Set(
+		r.stdout
+			.split("\n")
+			.filter(Boolean)
+			.map((l) => l.replace(/^refs\/heads\//, "")),
+	);
+}
+
+/** Number of uncommitted changes (incl. untracked files), or undefined if git failed. */
+export async function countChanges(wtPath: string): Promise<number | undefined> {
+	const r = await git(["--no-optional-locks", "status", "--porcelain", "--untracked-files=normal"], wtPath, 30_000);
+	if (r.code !== 0) return undefined;
+	return r.stdout.split("\n").filter(Boolean).length;
+}
+
+/** Last commit of a checkout (for detached worktrees, which have no branch entry). */
+export async function headSummary(wtPath: string): Promise<{ time?: number; subject?: string }> {
+	const r = await git(["log", "-1", "--format=%ct%x00%s", "HEAD"], wtPath);
+	if (r.code !== 0) return {};
+	const [time, subject] = r.stdout.trim().split("\0");
+	return { time: Number(time) || undefined, subject: subject || undefined };
+}
+
 /** Copy untracked files matching `patterns` (gitignore syntax) from `from` into `to`. */
 export async function copyUntracked(from: string, to: string, patterns: string[]): Promise<string[]> {
 	if (patterns.length === 0) return [];

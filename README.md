@@ -22,14 +22,17 @@ Or straight from GitHub: `pi install https://github.com/RebliNk17/pi-wt`
 
 ## Usage
 
-Ask for a change as usual. The agent creates `.pi/worktrees/<name>` on a new branch `<name>`. That folder is added to `.git/info/exclude` automatically. The agent works there and exits when it is done. The status bar shows `🌿 <name>` while a worktree is active.
+Ask for a change as usual. The agent creates `<repo>/.worktrees/<name>` on a new branch `<name>`. That folder is added to `.git/info/exclude` automatically. The agent works there and exits when it is done. The status bar shows `🌿 <name>` while a worktree is active.
 
 | What | How |
 | --- | --- |
 | Start pi in a fresh worktree | `pi --wt` or `pi --worktree my-feature` |
-| Status | `/worktree` |
-| Enter or leave by hand | `/worktree enter <name> [base]`, `/worktree exit keep\|remove` |
-| List worktrees | `/worktree list` |
+| Pick a worktree to switch to, or create one | `/worktree` (or `/worktree enter`) |
+| Enter or create by name | `/worktree enter <name> [base]` |
+| Leave | `/worktree exit keep\|remove` |
+| Status, while in a worktree | `/worktree` |
+| Browse, filter and remove worktrees | `/worktree list [filter]` |
+| Remove finished worktrees (merged / PR closed / remote branch deleted) | `/worktree clean` |
 
 Tools:
 
@@ -38,6 +41,59 @@ Tools:
   - `remove` deletes the worktree and the branch this session created.
   - It refuses to remove dirty or unmerged work unless `discard_changes` is set.
   - It never removes a worktree that this session did not create.
+
+## Managing worktrees
+
+`/worktree list` shows every worktree of the repo, with one verdict per worktree that answers "can I delete this?":
+
+| Verdict | Meaning |
+| --- | --- |
+| 🗑 **done** | Merged into the default branch, PR merged or closed, or the remote branch was deleted. There are no local changes, so removing it loses nothing. |
+| ○ **empty** | No commits of its own yet. |
+| ● **in progress** | Pushed but not finished (open or draft PR, or no PR yet). |
+| ⚠ **unsaved work** | Has work that exists only on this disk: uncommitted changes, unpushed commits, or a branch that was never pushed. |
+
+Each row also shows why it got that verdict, when the last commit was made, the PR title or branch description (`git branch --edit-description`), and the path.
+
+### In the terminal
+
+![/worktree list in the terminal](https://raw.githubusercontent.com/RebliNk17/pi-wt/master/docs/list-tui.png)
+
+- type to filter by branch, path, commit message, PR title or number
+- `tab` switches between **all**, **done**, **in progress** and **unsaved**
+- `space` selects a worktree, `ctrl+a` selects all done ones
+- `enter` removes the selection, with or without its branches
+
+<img src="https://raw.githubusercontent.com/RebliNk17/pi-wt/master/docs/remove-confirm.png" alt="Confirm removal" width="49%"> <img src="https://raw.githubusercontent.com/RebliNk17/pi-wt/master/docs/remove-done.png" alt="Removed" width="49%">
+
+`/worktree clean` opens the same view with every done worktree already selected.
+
+### In pi-gui
+
+pi-gui can't show terminal components, so the list is a dialog. Each worktree is a button, and the first button removes all done worktrees. Clicking a worktree offers to remove it (with or without its branch) or open its PR.
+
+<img src="https://raw.githubusercontent.com/RebliNk17/pi-wt/master/docs/list-gui.png" alt="/worktree list in pi-gui" width="49%"> <img src="https://raw.githubusercontent.com/RebliNk17/pi-wt/master/docs/gui-details.png" alt="One worktree in pi-gui" width="49%">
+
+![Removed in pi-gui](https://raw.githubusercontent.com/RebliNk17/pi-wt/master/docs/gui-removed.png)
+
+### Switching worktrees
+
+When no worktree is active, `/worktree` (or `/worktree enter` with no name) lists the worktrees you can switch to, with the same verdicts. Press `enter` to switch to one. Press `ctrl+n` to create a new one: type a name first and it is used, otherwise pi asks for a name (leave it empty for an automatic one). Typing a name that matches nothing and pressing `enter` also creates it. In pi-gui the list is a dialog with "+ New worktree…" as the first button. If the repo has no other worktrees yet, pi just asks for a name.
+
+![/worktree switcher in the terminal](https://raw.githubusercontent.com/RebliNk17/pi-wt/master/docs/switch-tui.png)
+
+![Switched](https://raw.githubusercontent.com/RebliNk17/pi-wt/master/docs/switch-done.png)
+
+`/worktree enter <name>` skips the list. It enters that worktree if one exists for the branch, or creates it. Tab completion suggests existing branches.
+
+PR status comes from the [GitHub CLI](https://cli.github.com) (`gh`), in one request for all branches. This catches squash merges that git alone can't see. Without `gh`, or if it is not logged in, the list still works using git alone.
+
+Removal is careful:
+- The main checkout, the current checkout, the active worktree and locked worktrees are never removed.
+- A worktree with unsaved work is never selected automatically, and removing one by hand asks first.
+- Branches that aren't done are deleted with `git branch -d`, so git refuses if they hold unmerged commits.
+
+To try it on a throwaway repo with one worktree in each state, run `scripts/demo.sh` (it creates `~/git/acme-app`).
 
 ## Config
 
@@ -53,7 +109,7 @@ Settings are read from `~/.pi/agent/worktree.json`. A per-repo `<repo>/.pi/workt
 }
 ```
 
-- `root`: where worktrees are created, relative to the main repo. Supports `~` and `{repo}`. The default is `.pi/worktrees`.
+- `root`: where worktrees are created, relative to the main repo. Supports `~` and `{repo}`. The default is `.worktrees`. To keep them out of sight, use `.git/pi-worktrees`. Don't use `.git/worktrees`, which is where git keeps its own worktree metadata.
 - `copy`: gitignore-style patterns for untracked or ignored files to copy into new worktrees. Patterns from a Claude Code style `.worktreeinclude` file are also used.
 - `setup`: a shell command run in each new worktree.
 - `policy`:

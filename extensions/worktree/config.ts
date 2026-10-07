@@ -18,7 +18,7 @@ export interface WorktreeConfig {
 }
 
 export const DEFAULT_CONFIG: WorktreeConfig = {
-	root: ".pi/worktrees",
+	root: ".worktrees",
 	branchPrefix: "",
 	copy: [],
 	policy: "auto",

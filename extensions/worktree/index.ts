@@ -7,7 +7,8 @@
  * - On quit, if a worktree created by this session is still active, you are
  *   asked whether to keep or remove it.
  * - `pi --wt` / `pi --worktree <name>` starts the session inside a new worktree.
- * - `/worktree` shows status, `/worktree enter <name>`, `/worktree exit [keep|remove]`.
+ * - `/worktree` picks a worktree to switch to (status while in one); `/worktree enter [name]`,
+ *   `/worktree exit [keep|remove]`, `/worktree list [filter]`, `/worktree clean`.
  */
 
 import * as fs from "node:fs";
@@ -22,6 +23,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { loadConfig, readWorktreeInclude, type WorktreeConfig } from "./config.ts";
+import { dialogClean, dialogList, dialogSwitch } from "./dialogs.ts";
 import {
 	branchExists,
 	copyUntracked,
@@ -35,6 +37,18 @@ import {
 	worktreeStatus,
 } from "./git.ts";
 import {
+	assess,
+	collect,
+	fillChanges,
+	fillPrs,
+	formatList,
+	isDone,
+	type Row,
+	removeRows,
+	rowName,
+	tildify as tildifyPath,
+} from "./list.ts";
+import {
 	isWithin,
 	mapPath,
 	type PathMapping,
@@ -44,6 +58,7 @@ import {
 	slugify,
 	timestampName,
 } from "./paths.ts";
+import { isEnterable, type PickerOptions, type PickerResult, WorktreePicker } from "./picker.ts";
 import { color, select } from "./prompt.ts";
 
 const STATE_ENTRY = "pi-wt-state";
@@ -79,6 +94,14 @@ export default function piWorktree(pi: ExtensionAPI) {
 	let localBash: BashOperations | undefined;
 
 	// ---------------------------------------------------------------- helpers
+
+	const realPath = (p: string) => {
+		try {
+			return fs.realpathSync(p);
+		} catch {
+			return path.resolve(p);
+		}
+	};
 
 	function mapping(): PathMapping | undefined {
 		if (!active) return undefined;
@@ -129,24 +152,29 @@ export default function piWorktree(pi: ExtensionAPI) {
 	// ------------------------------------------------------------ operations
 
 	async function enterWorktree(
-		params: { name?: string; base?: string },
+		params: { name?: string; base?: string /** Enter this existing worktree. */; path?: string },
 		ctx: ExtensionContext,
-	): Promise<{ text: string; wt: ActiveWorktree }> {
+	): Promise<{ text: string; wt: ActiveWorktree; summary: string[] }> {
 		const r = requireRepo();
 		if (active) {
 			throw new Error(`Already in worktree "${active.name}" (${active.path}). Call exit_worktree first.`);
 		}
 
-		const name = slugify(params.name ?? "") || timestampName();
-		const existing = (await listWorktrees(r.mainRoot)).find(
-			(w) => w.branch === name || w.branch === `${r.config.branchPrefix}${name}` || path.basename(w.path) === name,
-		);
+		const entries = await listWorktrees(r.mainRoot);
+		const byPath = params.path ? entries.find((w) => realPath(w.path) === realPath(params.path ?? "")) : undefined;
+		if (params.path && !byPath) throw new Error(`Not a worktree of this repo: ${params.path}`);
+		const name = byPath ? (byPath.branch ?? path.basename(byPath.path)) : slugify(params.name ?? "") || timestampName();
+		const existing =
+			byPath ??
+			entries.find(
+				(w) => w.branch === name || w.branch === `${r.config.branchPrefix}${name}` || path.basename(w.path) === name,
+			);
 
 		let wt: ActiveWorktree;
 		const notes: string[] = [];
 
 		if (existing) {
-			if (path.resolve(existing.path) === path.resolve(r.repoRoot)) {
+			if (realPath(existing.path) === realPath(r.repoRoot)) {
 				throw new Error(`"${name}" is the checkout this session already runs in.`);
 			}
 			wt = {
@@ -209,10 +237,11 @@ export default function piWorktree(pi: ExtensionAPI) {
 		}
 
 		setActive(wt, ctx);
+		const summary = [...notes];
 		notes.push(
 			"All file tools and bash commands now run inside this worktree. Paths under the original checkout are redirected automatically. Call exit_worktree when the work is finished.",
 		);
-		return { text: notes.join("\n"), wt };
+		return { text: notes.join("\n"), wt, summary };
 	}
 
 	async function describeChanges(wt: ActiveWorktree): Promise<{ dirty: boolean; summary: string }> {
@@ -458,20 +487,175 @@ export default function piWorktree(pi: ExtensionAPI) {
 		}
 	});
 
+	// ------------------------------------------------------------ list/clean
+
+	async function listCommand(ctx: ExtensionContext, opts: PickerOptions) {
+		const r = requireRepo();
+		const listing = await collect(r.mainRoot, r.repoRoot, active?.path);
+
+		// Hosts without terminal components. pi-gui/RPC have dialogs; print/json only get text.
+		const plain = async () => {
+			if (ctx.hasUI) ctx.ui.notify("🌿 Checking worktrees…", "info");
+			await Promise.all([fillChanges(listing.rows), fillPrs(listing).catch(() => false)]);
+			const q = opts.filter?.toLowerCase().trim();
+			if (q)
+				listing.rows = listing.rows.filter((x) =>
+					[x.branch, x.path, x.subject, x.pr?.title].some((v) => v?.toLowerCase().includes(q)),
+				);
+			if (ctx.hasUI) return opts.autoSelectDone ? dialogClean(ctx, listing) : dialogList(ctx, listing);
+			if (!opts.autoSelectDone) return ctx.ui.notify(formatList(listing), "info");
+			const rows = listing.rows.filter(isDone);
+			if (!rows.length) return ctx.ui.notify("Nothing to clean: no finished worktrees.", "info");
+			await confirmAndRemove(ctx, rows, r.mainRoot);
+		};
+		if (ctx.mode !== "tui") return plain();
+
+		let picker: WorktreePicker | undefined;
+		let closed = false;
+		const loading = new Set(["changes", "PRs"]);
+		const update = () => picker?.update([...loading]);
+		const result = ctx.ui.custom<PickerResult>((tui, theme, _kb, done) => {
+			picker = new WorktreePicker(listing, tui, theme, done, opts);
+			picker.update([...loading]);
+			return picker;
+		});
+		// Change counts and PR lookups are the slow parts; they fill in while the picker is open.
+		void fillChanges(listing.rows, update, () => closed).finally(() => {
+			loading.delete("changes");
+			update();
+		});
+		void fillPrs(listing)
+			.catch(() => false)
+			.finally(() => {
+				loading.delete("PRs");
+				update();
+			});
+		let res: PickerResult;
+		try {
+			res = await result;
+		} catch {
+			closed = true;
+			return plain(); // host refused the custom component
+		}
+		closed = true;
+		if (res.action === "remove") await confirmAndRemove(ctx, res.rows, r.mainRoot);
+	}
+
+	/** Enter (or create) a worktree from a command and say where we are, in one short line. */
+	async function enterAndReport(ctx: ExtensionContext, params: { name?: string; base?: string; path?: string }) {
+		const { wt, summary } = await enterWorktree(params, ctx);
+		const how = wt.created ? (wt.createdBranch ? "new worktree" : "new worktree for existing branch") : "worktree";
+		ctx.ui.notify(`🌿 Switched to ${how} ${wt.branch} · ${tildifyPath(wt.path)}`, "info");
+		const extra = summary.filter((l) => !/^(Created|Reusing)/.test(l));
+		if (extra.length) ctx.ui.notify(extra.join("\n"), "info");
+	}
+
+	/** Pick an existing worktree to enter, or create a new one. */
+	async function switchCommand(ctx: ExtensionContext) {
+		const r = requireRepo();
+		if (active) {
+			ctx.ui.notify(`Already in worktree ${active.name}. Use \`/worktree exit\` first.`, "warning");
+			return;
+		}
+		const listing = await collect(r.mainRoot, r.repoRoot);
+		const enterable = listing.rows.filter(isEnterable);
+
+		const viaDialogs = async () => {
+			await Promise.all([fillChanges(listing.rows), fillPrs(listing).catch(() => false)]);
+			const pick = await dialogSwitch(ctx, listing);
+			if (pick?.action === "enter") await enterAndReport(ctx, { path: pick.row.path });
+			else if (pick?.action === "create") await enterAndReport(ctx, { name: pick.name || undefined });
+		};
+		if (!enterable.length) {
+			// Nothing to choose from: ask for a name (blank = auto-named).
+			if (!ctx.hasUI) return enterAndReport(ctx, {});
+			const name = await ctx.ui.input("New worktree name", "leave empty for an automatic name");
+			if (name === undefined) return;
+			return enterAndReport(ctx, { name: name.trim() || undefined });
+		}
+		if (ctx.mode !== "tui") return ctx.hasUI ? viaDialogs() : undefined;
+
+		let picker: WorktreePicker | undefined;
+		let closed = false;
+		const loading = new Set(["changes", "PRs"]);
+		const update = () => picker?.update([...loading]);
+		const result = ctx.ui.custom<PickerResult>((tui, theme, _kb, done) => {
+			picker = new WorktreePicker(listing, tui, theme, done, { mode: "switch" });
+			picker.update([...loading]);
+			return picker;
+		});
+		void fillChanges(listing.rows, update, () => closed).finally(() => {
+			loading.delete("changes");
+			update();
+		});
+		void fillPrs(listing)
+			.catch(() => false)
+			.finally(() => {
+				loading.delete("PRs");
+				update();
+			});
+		let res: PickerResult;
+		try {
+			res = await result;
+		} catch {
+			closed = true;
+			return viaDialogs();
+		}
+		closed = true;
+		if (res.action === "enter") await enterAndReport(ctx, { path: res.row.path });
+		else if (res.action === "create") {
+			const name = res.name || (await ctx.ui.input("New worktree name", "leave empty for an automatic name"));
+			if (name !== undefined) await enterAndReport(ctx, { name: name.trim() || undefined });
+		}
+	}
+
+	async function confirmAndRemove(ctx: ExtensionContext, rows: Row[], mainRoot: string) {
+		const verdicts = rows.map((row) => assess(row));
+		const risky = rows.filter((_, i) => verdicts[i]?.verdict === "unsaved" || verdicts[i]?.verdict === "pending");
+		const names = rows.map((row, i) => {
+			const a = verdicts[i];
+			const note = a?.verdict === "unsaved" ? `  ⚠ ${a.reasons.join(", ")}` : "";
+			return `  • ${rowName(row)}${note}`;
+		});
+		const title = `Remove ${rows.length} worktree${rows.length === 1 ? "" : "s"}?`;
+		const warn = risky.length ? `\n⚠ ${risky.length} of them have work that will be lost.` : "";
+		const BOTH = "Remove worktrees and their branches";
+		const WT = "Remove worktrees, keep branches";
+		const choice = await ctx.ui.select(`${title}\n${names.join("\n")}${warn}`, [BOTH, WT, "Cancel"]);
+		if (choice !== BOTH && choice !== WT) return;
+		const force = rows.some((row) => (row.changes ?? 0) > 0);
+		const results = await removeRows(rows, mainRoot, { deleteBranches: choice === BOTH, force });
+		const ok = results.filter((x) => x.ok).length;
+		const lines = results.map((x) => `${x.ok ? "✔" : "✖"} ${rowName(x.row)}: ${x.message}`);
+		ctx.ui.notify(`Removed ${ok}/${rows.length}\n${lines.join("\n")}`, ok === rows.length ? "info" : "warning");
+	}
+
 	// ----------------------------------------------------------------- command
 
 	pi.registerCommand("worktree", {
-		description: "Worktree status; `/worktree enter <name>`, `/worktree exit [keep|remove]`, `/worktree list`",
-		getArgumentCompletions: (prefix) =>
-			["enter ", "exit keep", "exit remove", "list"]
-				.filter((v) => v.startsWith(prefix))
-				.map((v) => ({ value: v, label: v })),
+		description:
+			"Pick a worktree to switch to (or status when in one); `/worktree enter [name]`, `/worktree exit [keep|remove]`, `/worktree list [filter]`, `/worktree clean`",
+		getArgumentCompletions: async (prefix) => {
+			const subs = ["enter ", "switch", "exit keep", "exit remove", "list", "clean"];
+			const m = /^enter\s+(\S*)$/.exec(prefix);
+			if (m && repo) {
+				// Complete existing worktree branches for `/worktree enter <name>`.
+				const here = realPath(repo.repoRoot);
+				const names = (await listWorktrees(repo.mainRoot).catch(() => []))
+					.filter((w) => w.branch && realPath(w.path) !== here)
+					.map((w) => w.branch as string)
+					.filter((b) => b.startsWith(m[1] ?? ""));
+				return names.map((b) => ({ value: `enter ${b}`, label: b }));
+			}
+			return subs.filter((v) => v.startsWith(prefix)).map((v) => ({ value: v, label: v }));
+		},
 		handler: async (args, ctx) => {
 			const [sub, ...rest] = args.trim().split(/\s+/).filter(Boolean);
 			try {
-				if (sub === "enter") {
-					const { text } = await enterWorktree({ name: rest[0], base: rest[1] }, ctx);
-					ctx.ui.notify(text, "info");
+				if (sub === "enter" && rest[0]) {
+					await enterAndReport(ctx, { name: rest[0], base: rest[1] });
+				} else if (sub === "enter" || sub === "switch" || (!sub && !active)) {
+					await switchCommand(ctx);
 				} else if (sub === "exit") {
 					const wt = active;
 					const action = rest[0] === "remove" ? "remove" : "keep";
@@ -484,18 +668,15 @@ export default function piWorktree(pi: ExtensionAPI) {
 						}
 					}
 					ctx.ui.notify(await exitWorktree({ action, discard_changes: discard }, ctx), "info");
-				} else if (sub === "list") {
-					const r = requireRepo();
-					const lines = (await listWorktrees(r.mainRoot)).map(
-						(w) =>
-							`${active && path.resolve(w.path) === path.resolve(active.path) ? "▶" : " "} ${w.branch ?? "(detached)"}  ${w.path}${w.prunable ? "  [prunable]" : ""}`,
-					);
-					ctx.ui.notify(lines.join("\n"), "info");
-				} else if (active) {
+				} else if (sub === "list" || sub === "ls") {
+					await listCommand(ctx, { filter: rest.join(" ") });
+				} else if (sub === "clean") {
+					await listCommand(ctx, { view: "done", autoSelectDone: true });
+				} else if (active && !sub) {
 					const { summary } = await describeChanges(active);
 					ctx.ui.notify(`🌿 ${active.name} on ${active.branch}\n${active.path}\n${summary}`, "info");
 				} else {
-					ctx.ui.notify("No active worktree. Use `/worktree enter <name>` or ask the agent to start one.", "info");
+					ctx.ui.notify(`Unknown subcommand "${sub}". Try enter, switch, exit, list or clean.`, "warning");
 				}
 			} catch (error) {
 				ctx.ui.notify((error as Error).message, "error");
