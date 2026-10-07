@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## Unreleased
 
+## 0.2.0
+
 - `/worktree list [filter]` opens an interactive, colored picker. Each worktree gets one verdict about whether it can be deleted:
   - 🗑 done: merged, PR closed, or remote branch deleted, with no local changes.
   - ○ empty: no commits of its own.
