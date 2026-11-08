@@ -3,6 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import {
 	branchDescriptions,
+	changesInBase,
 	countChanges,
 	defaultBaseRef,
 	git,
@@ -35,7 +36,10 @@ export interface Row {
 	behind: number;
 	/** Upstream configured but deleted on the remote (usually: PR merged). */
 	gone: boolean;
-	/** Tip is contained in the base branch, and the branch was pushed at some point. */
+	/**
+	 * Tip is contained in the base branch (or, once its upstream is gone, all its changes are
+	 * already in the base, e.g. squash-merged), and the branch was pushed at some point.
+	 */
 	merged: boolean;
 	/** Tip is contained in the base branch but it was never pushed: no work of its own yet. */
 	empty: boolean;
@@ -83,7 +87,6 @@ export function assess(r: Row, base?: string): Assessment {
 	if (pr?.state === "MERGED") return { verdict: "done", reasons: [`PR #${pr.number} merged`] };
 	if (r.merged) return { verdict: "done", reasons: [`merged into ${base ?? "base"}`] };
 	if (pr?.state === "CLOSED") return { verdict: "done", reasons: [`PR #${pr.number} closed without merging`] };
-	if (r.gone && !pr) return { verdict: "done", reasons: ["branch deleted on remote (PR likely merged)"] };
 	if (r.empty) return { verdict: "empty", reasons: [`no commits beyond ${base ?? "base"}`] };
 
 	const reasons: string[] = [];
@@ -137,6 +140,9 @@ export async function collect(mainRoot: string, repoRoot: string, activePath?: s
 			const isBase = !!w.branch && !!base && (base === w.branch || base.endsWith(`/${w.branch}`));
 			const contained = !!w.branch && !isBase && i !== 0 && merged.has(w.branch);
 			const pushed = !!b?.upstream;
+			// Upstream deleted (often a squash merge): only call it merged if nothing would be lost.
+			const squashed =
+				!contained && !!b?.gone && !!b.tip && !!base && !isBase && (await changesInBase(b.tip, base, mainRoot));
 			const head = !w.branch && !missing ? await headSummary(w.path) : {};
 			const p = real(w.path);
 			return {
@@ -154,7 +160,7 @@ export async function collect(mainRoot: string, repoRoot: string, activePath?: s
 				ahead: b?.ahead ?? 0,
 				behind: b?.behind ?? 0,
 				gone: b?.gone ?? false,
-				merged: contained && pushed,
+				merged: (contained || squashed) && pushed,
 				empty: contained && !pushed,
 				time: b?.time ?? head.time,
 				subject: b?.subject ?? head.subject,
@@ -213,9 +219,9 @@ export interface RemoveResult {
 }
 
 /**
- * Remove worktrees (and optionally their branches). Branches that are merged or
- * whose upstream is gone are deleted with `-D` (squash merges are not
- * ancestors); others with `-d`, so unmerged work is kept.
+ * Remove worktrees (and optionally their branches). Branches that are done
+ * (merged, including squash merges, which are not ancestors) are deleted with
+ * `-D`; others with `-d`, so unmerged work is kept.
  */
 export async function removeRows(
 	rows: Row[],

@@ -32,7 +32,7 @@ Ask for a change as usual. The agent creates `<repo>/.worktrees/<name>` on a new
 | Leave | `/worktree exit keep\|remove` |
 | Status, while in a worktree | `/worktree` |
 | Browse, filter and remove worktrees | `/worktree list [filter]` |
-| Remove finished worktrees (merged / PR closed / remote branch deleted) | `/worktree clean` |
+| Remove finished worktrees (merged / PR closed / squash-merged) | `/worktree clean` |
 
 Tools:
 
@@ -48,7 +48,7 @@ Tools:
 
 | Verdict | Meaning |
 | --- | --- |
-| 🗑 **done** | Merged into the default branch, PR merged or closed, or the remote branch was deleted. There are no local changes, so removing it loses nothing. |
+| 🗑 **done** | Merged into the default branch, PR merged or closed, or the remote branch was deleted and all its changes are already in the default branch (squash merge). There are no local changes, so removing it loses nothing. |
 | ○ **empty** | No commits of its own yet. |
 | ● **in progress** | Pushed but not finished (open or draft PR, or no PR yet). |
 | ⚠ **unsaved work** | Has work that exists only on this disk: uncommitted changes, unpushed commits, or a branch that was never pushed. |

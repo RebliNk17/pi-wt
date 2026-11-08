@@ -176,6 +176,18 @@ export async function mergedInto(base: string, cwd: string): Promise<Set<string>
 	);
 }
 
+/**
+ * True when merging `tip` into `base` would change nothing: every change on the branch is
+ * already in the base (squash/rebase merges included). Needs git >= 2.38; false if unsure.
+ */
+export async function changesInBase(tip: string, base: string, cwd: string): Promise<boolean> {
+	const [m, b] = await Promise.all([
+		git(["merge-tree", "--write-tree", base, tip], cwd),
+		git(["rev-parse", `${base}^{tree}`], cwd),
+	]);
+	return m.code === 0 && b.code === 0 && m.stdout.split("\n")[0]?.trim() === b.stdout.trim();
+}
+
 /** Number of uncommitted changes (incl. untracked files), or undefined if git failed. */
 export async function countChanges(wtPath: string): Promise<number | undefined> {
 	const r = await git(["--no-optional-locks", "status", "--porcelain", "--untracked-files=normal"], wtPath, 30_000);
