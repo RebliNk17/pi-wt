@@ -188,6 +188,24 @@ export async function changesInBase(tip: string, base: string, cwd: string): Pro
 	return m.code === 0 && b.code === 0 && m.stdout.split("\n")[0]?.trim() === b.stdout.trim();
 }
 
+/** True when `commit` is reachable from some branch, remote branch or tag; false if unsure. */
+export async function onSomeRef(commit: string, cwd: string): Promise<boolean> {
+	const r = await git(
+		[
+			"for-each-ref",
+			"--count=1",
+			"--contains",
+			commit,
+			"--format=%(refname)",
+			"refs/heads",
+			"refs/remotes",
+			"refs/tags",
+		],
+		cwd,
+	);
+	return r.code === 0 && r.stdout.trim() !== "";
+}
+
 /** Number of uncommitted changes (incl. untracked files), or undefined if git failed. */
 export async function countChanges(wtPath: string): Promise<number | undefined> {
 	const r = await git(["--no-optional-locks", "status", "--porcelain", "--untracked-files=normal"], wtPath, 30_000);

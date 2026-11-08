@@ -11,6 +11,7 @@ import {
 	listBranches,
 	listWorktrees,
 	mergedInto,
+	onSomeRef,
 } from "./git.ts";
 import { fetchPrs, type PrInfo } from "./github.ts";
 
@@ -50,6 +51,8 @@ export interface Row {
 	changes?: number;
 	/** Latest PR for this branch, if `gh` found one. */
 	pr?: PrInfo;
+	/** Detached HEAD whose commit is on no branch, remote branch or tag: removing it orphans the commits. */
+	orphan?: boolean;
 	/** Local branch is not contained in the (merged/closed) PR's head, or that can't be verified. */
 	afterPr?: boolean;
 }
@@ -71,8 +74,10 @@ export interface Assessment {
 }
 
 export function assess(r: Row, base?: string): Assessment {
-	if (r.missing) return { verdict: "done", reasons: ["folder already deleted"] };
 	const unsaved: string[] = [];
+	if (r.orphan) unsaved.push("detached commits not on any branch");
+	// The branch's commits outlive the folder; removeRows still checks them before deleting it.
+	if (r.missing && !unsaved.length) return { verdict: "done", reasons: ["folder already deleted"] };
 	if (r.changes && r.changes > 0) unsaved.push(`${r.changes} uncommitted change${r.changes === 1 ? "" : "s"}`);
 	if (r.upstream && !r.gone && r.ahead > 0) unsaved.push(`${r.ahead} unpushed commit${r.ahead === 1 ? "" : "s"}`);
 	if (r.branch && !r.upstream && !r.merged && !r.empty && !r.pr && !r.main) unsaved.push("commits never pushed");
@@ -86,12 +91,16 @@ export function assess(r: Row, base?: string): Assessment {
 	if (r.afterPr && r.pr) return { verdict: "progress", reasons: [`branch differs from PR #${r.pr.number}`] };
 	if (pr?.state === "MERGED") return { verdict: "done", reasons: [`PR #${pr.number} merged`] };
 	if (r.merged) return { verdict: "done", reasons: [`merged into ${base ?? "base"}`] };
-	if (pr?.state === "CLOSED") return { verdict: "done", reasons: [`PR #${pr.number} closed without merging`] };
+	// Closed but unmerged work is only safe to drop locally while the remote still has it.
+	if (pr?.state === "CLOSED" && pushed)
+		return { verdict: "done", reasons: [`PR #${pr.number} closed without merging`] };
 	if (r.empty) return { verdict: "empty", reasons: [`no commits beyond ${base ?? "base"}`] };
 
 	const reasons: string[] = [];
-	if (pr) reasons.push(`${pr.state === "DRAFT" ? "draft " : ""}PR #${pr.number} open`);
-	else reasons.push(r.gone ? "branch deleted on remote" : "pushed, no PR");
+	if (pr?.state === "CLOSED") reasons.push(`PR #${pr.number} closed without merging`);
+	else if (pr) reasons.push(`${pr.state === "DRAFT" ? "draft " : ""}PR #${pr.number} open`);
+	if (r.gone) reasons.push("branch deleted on remote");
+	else if (!pr) reasons.push(r.branch ? "pushed, no PR" : "detached HEAD");
 	if (r.behind > 0) reasons.push(`${r.behind} behind remote`);
 	return { verdict: "progress", reasons };
 }
@@ -144,6 +153,7 @@ export async function collect(mainRoot: string, repoRoot: string, activePath?: s
 			const squashed =
 				!contained && !!b?.gone && !!b.tip && !!base && !isBase && (await changesInBase(b.tip, base, mainRoot));
 			const head = !w.branch && !missing ? await headSummary(w.path) : {};
+			const orphan = !w.branch && i !== 0 && !!w.head && !(await onSomeRef(w.head, mainRoot));
 			const p = real(w.path);
 			return {
 				path: w.path,
@@ -165,6 +175,7 @@ export async function collect(mainRoot: string, repoRoot: string, activePath?: s
 				time: b?.time ?? head.time,
 				subject: b?.subject ?? head.subject,
 				description: w.branch ? descriptions.get(w.branch) : undefined,
+				orphan,
 				changes: missing ? 0 : undefined,
 			};
 		}),
@@ -192,7 +203,7 @@ export async function fillChanges(
 
 /** Look up PRs with `gh` (if available) and mark local commits that never made it into a finished PR. */
 export async function fillPrs(l: Listing, onDone: () => void = () => {}): Promise<boolean> {
-	const rows = l.rows.filter((r) => r.remoteBranch && !r.missing);
+	const rows = l.rows.filter((r) => r.remoteBranch);
 	const prs = await fetchPrs(
 		l.mainRoot,
 		rows.map((r) => r.remoteBranch as string),
@@ -243,7 +254,8 @@ export async function removeRows(
 		let message = "worktree removed";
 		if (opts.deleteBranches && row.branch) {
 			// Squash/rebase merges are not ancestors of the base, so finished branches need -D.
-			const v = assess(row).verdict;
+			// Judge the branch as if the folder were still there: a deleted folder says nothing about its commits.
+			const v = assess({ ...row, missing: false, changes: 0 }).verdict;
 			const flag = v === "done" || v === "empty" ? "-D" : "-d";
 			const del = await git(["branch", flag, row.branch], mainRoot);
 			message += del.code === 0 ? ", branch deleted" : ", branch kept (not fully merged)";

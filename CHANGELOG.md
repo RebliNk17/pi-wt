@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## Unreleased
 
+- Fixed: removing a worktree whose folder had been deleted by hand force-deleted its branch, even with unpushed commits. The worktree is still pruned, but the branch is now judged on its own commits and kept unless they are merged.
+- Fixed: a detached-HEAD worktree was shown as "pushed, no PR". It now shows as unsaved when its commits are on no branch, remote branch or tag, and as "detached HEAD" otherwise.
+- Fixed: a worktree whose PR was closed without merging was marked done (and its branch force-deleted) even after the remote branch was deleted, leaving the local branch as the only copy. It is now done only while the remote still has the branch.
+
 ## 0.2.1
 
 - Fixed: a worktree whose remote branch was deleted was marked done, and its branch force-deleted, even if it had local-only commits ([#5](https://github.com/RebliNk17/pi-wt/issues/5)). It is now done only if all its changes are already in the default branch (which still catches squash merges without `gh`); otherwise it shows as in progress.
