@@ -4,7 +4,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## Unreleased
 
-- Security: a `setup` command from a repo's own `.pi/worktree.json` now needs your approval before it runs (asked once per command, remembered in `~/.pi/agent/worktree-approved.json`). Before, opening a malicious repo could run its command as soon as the agent created a worktree. A `setup` in your global config is unchanged.
+## 0.3.0
+
+- Security: a `setup` command from a repo's own `.pi/worktree.json` now needs your approval before it runs (asked once per command, remembered in `~/.pi/agent/worktree-approved.json`). Before, opening a malicious repo could run its command as soon as the agent created a worktree. A `setup` in your global config is unchanged. **Behavior change:** without a UI (print or RPC mode with no dialogs), a repo-provided `setup` is skipped; approve it once interactively, or move it to `~/.pi/agent/worktree.json`.
 - Fixed: removing a worktree whose folder had been deleted by hand force-deleted its branch, even with unpushed commits. The worktree is still pruned, but the branch is now judged on its own commits and kept unless they are merged.
 - Fixed: a detached-HEAD worktree was shown as "pushed, no PR". It now shows as unsaved when its commits are on no branch, remote branch or tag, and as "detached HEAD" otherwise.
 - Fixed: a worktree whose PR was closed without merging was marked done (and its branch force-deleted) even after the remote branch was deleted, leaving the local branch as the only copy. It is now done only while the remote still has the branch.
