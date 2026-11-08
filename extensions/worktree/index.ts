@@ -22,7 +22,7 @@ import {
 	type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { loadConfig, readWorktreeInclude, type WorktreeConfig } from "./config.ts";
+import { approveSetup, isSetupApproved, loadConfig, readWorktreeInclude, type WorktreeConfig } from "./config.ts";
 import { dialogClean, dialogList, dialogSwitch } from "./dialogs.ts";
 import {
 	branchExists,
@@ -228,7 +228,9 @@ export default function piWorktree(pi: ExtensionAPI) {
 					`Copied ${copied.length} untracked file(s): ${copied.slice(0, 10).join(", ")}${copied.length > 10 ? ", …" : ""}`,
 				);
 
-			if (r.config.setup) {
+			if (r.config.setup && !(await setupAllowed(r.config, r.mainRoot, ctx))) {
+				notes.push(`Skipped setup \`${r.config.setup}\` from .pi/worktree.json: not approved.`);
+			} else if (r.config.setup) {
 				ctx.ui.notify(`pi-wt: running setup in ${name}…`, "info");
 				const s = await run("/bin/sh", ["-c", r.config.setup], wt.path, 15 * 60_000);
 				const tail = (s.stdout + s.stderr).trim().split("\n").slice(-15).join("\n");
@@ -242,6 +244,19 @@ export default function piWorktree(pi: ExtensionAPI) {
 			"All file tools and bash commands now run inside this worktree. Paths under the original checkout are redirected automatically. Call exit_worktree when the work is finished.",
 		);
 		return { text: notes.join("\n"), wt, summary };
+	}
+
+	/** A repo's own `.pi/worktree.json` could run anything, so its setup needs a one-time OK per command. */
+	async function setupAllowed(config: WorktreeConfig, mainRoot: string, ctx: ExtensionContext): Promise<boolean> {
+		const cmd = config.setup;
+		if (!cmd || !config.setupFromRepo || isSetupApproved(mainRoot, cmd)) return true;
+		if (!ctx.hasUI) return false;
+		const ok = await ctx.ui.confirm(
+			"Run this repo's worktree setup?",
+			`${path.join(mainRoot, ".pi", "worktree.json")} wants to run this in each new worktree:\n\n  ${cmd}\n\nOnly allow commands you trust. Your answer is remembered for this exact command.`,
+		);
+		if (ok) approveSetup(mainRoot, cmd);
+		return ok;
 	}
 
 	async function describeChanges(wt: ActiveWorktree): Promise<{ dirty: boolean; summary: string }> {

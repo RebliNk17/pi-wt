@@ -176,3 +176,34 @@ test("/worktree with nothing active: pick one to enter, or create one", async ()
 	assert.match(notes[0]!, /^🌿 made-here on made-here/);
 	fs.rmSync(repo, { recursive: true, force: true });
 });
+
+test("repo-provided setup needs approval once per command", async () => {
+	const { repo, tools, emit, ctx } = setup();
+	fs.mkdirSync(path.join(repo, ".pi"));
+	fs.writeFileSync(path.join(repo, ".pi", "worktree.json"), JSON.stringify({ setup: "touch ran.txt" }));
+	await emit("session_start", { reason: "startup" });
+	const asked: string[] = [];
+	const replies = [false, true];
+	ctx.ui.confirm = async (_t: string, msg: string) => {
+		asked.push(msg);
+		return replies.shift() ?? assert.fail("asked again after approval");
+	};
+	const enter = async (name: string) => {
+		const res = await tools.get("enter_worktree").execute(name, { name }, undefined, undefined, ctx);
+		await tools.get("exit_worktree").execute(name, { action: "keep" }, undefined, undefined, ctx);
+		return { text: res.content[0].text as string, ran: fs.existsSync(path.join(res.details.worktree.path, "ran.txt")) };
+	};
+
+	const declined = await enter("s1");
+	assert.ok(!declined.ran);
+	assert.match(declined.text, /Skipped setup `touch ran.txt`/);
+	assert.match(asked[0]!, /touch ran\.txt/);
+	assert.ok((await enter("s2")).ran);
+	assert.ok((await enter("s3")).ran);
+	assert.equal(asked.length, 2);
+
+	ctx.hasUI = false;
+	fs.writeFileSync(path.join(repo, ".pi", "worktree.json"), JSON.stringify({ setup: "touch other.txt" }));
+	await emit("session_start", { reason: "startup" }); // config is read per session
+	assert.match((await enter("s4")).text, /Skipped setup `touch other.txt`/);
+});
