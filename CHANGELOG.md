@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## Unreleased
 
+## 0.2.1
+
 - Fixed: a worktree whose remote branch was deleted was marked done, and its branch force-deleted, even if it had local-only commits ([#5](https://github.com/RebliNk17/pi-wt/issues/5)). It is now done only if all its changes are already in the default branch (which still catches squash merges without `gh`); otherwise it shows as in progress.
 
 ## 0.2.0
