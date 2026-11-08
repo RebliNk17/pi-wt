@@ -58,7 +58,9 @@ test("assess", () => {
 	assert.deepEqual(v({ pr: pr("MERGED") }), { verdict: "done", reasons: ["PR #7 merged"] });
 	assert.equal(v({ pr: pr("CLOSED") }).verdict, "done");
 	assert.deepEqual(v({ pr: pr("DRAFT") }).reasons, ["draft PR #7 open"]);
-	assert.equal(v({ gone: true }).verdict, "done");
+	// Gone upstream alone proves nothing (issue #5): only `merged` (changes in base) makes it done.
+	assert.deepEqual(v({ gone: true }), { verdict: "progress", reasons: ["branch deleted on remote"] });
+	assert.equal(v({ gone: true, merged: true }).verdict, "done");
 	assert.deepEqual(v({ merged: true }).reasons, ["merged into origin/main"]);
 	assert.equal(v({ empty: true, upstream: undefined }).verdict, "empty");
 	assert.deepEqual(v({ changes: 2, pr: pr("MERGED") }), { verdict: "unsaved", reasons: ["2 uncommitted changes"] });
@@ -109,6 +111,26 @@ async function fixture() {
 	g(wt("gone"), "push", "-q", "-u", "origin", "gone");
 	g(repo, "push", "-q", "origin", "--delete", "gone");
 	g(repo, "fetch", "-q", "--prune");
+	// squashed: real change, squash-merged into main, remote branch deleted
+	add("squashed");
+	fs.writeFileSync(path.join(wt("squashed"), "s.txt"), "s");
+	g(wt("squashed"), "add", "s.txt");
+	g(wt("squashed"), "commit", "-q", "-m", "squashed work");
+	g(wt("squashed"), "push", "-q", "-u", "origin", "squashed");
+	g(repo, "merge", "-q", "--squash", "squashed");
+	g(repo, "commit", "-q", "-m", "squash");
+	g(repo, "push", "-q", "origin", "main");
+	g(repo, "push", "-q", "origin", "--delete", "squashed");
+	g(repo, "fetch", "-q", "--prune");
+	// later: pushed, remote deleted, then more commits locally (issue #5): must not be auto-cleaned
+	add("later");
+	g(wt("later"), "commit", "-q", "--allow-empty", "-m", "pushed work");
+	g(wt("later"), "push", "-q", "-u", "origin", "later");
+	g(repo, "push", "-q", "origin", "--delete", "later");
+	g(repo, "fetch", "-q", "--prune");
+	fs.writeFileSync(path.join(wt("later"), "l.txt"), "l");
+	g(wt("later"), "add", "l.txt");
+	g(wt("later"), "commit", "-q", "-m", "local-only work");
 	// dirty and gone: must not be auto-cleaned
 	add("dirty");
 	g(wt("dirty"), "commit", "-q", "--allow-empty", "-m", "dirty work");
@@ -137,7 +159,9 @@ test("collect, classify, clean", async () => {
 	assert.equal(l.rows[0]!.branch, "main");
 	assert.ok(l.rows[0]!.main && l.rows[0]!.here);
 	assert.ok(by("merged").merged);
-	assert.ok(by("gone").gone && !by("gone").merged);
+	assert.ok(by("gone").gone && by("gone").merged);
+	assert.ok(by("squashed").gone && by("squashed").merged);
+	assert.ok(by("later").gone && !by("later").merged);
 	assert.ok(by("fresh").empty && !by("fresh").merged);
 	assert.equal(by("fresh").description, "Try the new thing");
 	assert.ok(!by("wip").merged && !by("wip").gone && !by("wip").upstream);
@@ -152,12 +176,13 @@ test("collect, classify, clean", async () => {
 			.filter(isDone)
 			.map((r) => r.branch)
 			.sort(),
-		["gone", "merged", "missing"],
+		["gone", "merged", "missing", "squashed"],
 	);
 	assert.equal(assess(by("dirty")).verdict, "unsaved");
 	assert.equal(assess(by("wip")).verdict, "unsaved");
 	assert.equal(assess(by("fresh")).verdict, "empty");
-	assert.match(formatList(l), /7 worktrees of .* · 3 done/);
+	assert.equal(assess(by("later")).verdict, "progress");
+	assert.match(formatList(l), /9 worktrees of .* · 4 done/);
 
 	const res = await removeRows(l.rows.filter(isDone), repo, { deleteBranches: true, force: false });
 	assert.ok(
@@ -167,7 +192,8 @@ test("collect, classify, clean", async () => {
 	const left = g(repo, "worktree", "list", "--porcelain");
 	assert.doesNotMatch(left, /merged|\/gone|missing/);
 	assert.match(left, /dirty/);
-	assert.equal(g(repo, "branch", "--list", "merged", "gone", "missing"), "");
+	assert.match(left, /later/);
+	assert.equal(g(repo, "branch", "--list", "merged", "gone", "missing", "squashed"), "");
 	assert.match(g(repo, "branch", "--list", "dirty", "fresh", "wip"), /dirty[\s\S]*fresh[\s\S]*wip/);
 	fs.rmSync(tmp, { recursive: true, force: true });
 });
@@ -190,12 +216,12 @@ test("dialog fallback (pi-gui)", async () => {
 	const copy = await collect(repo, repo);
 	await Promise.all([fillChanges(copy.rows)]);
 	await dialogList({ ui } as any, copy);
-	assert.match(seen[0]!.title, /^🌿 7 worktrees · 3 done · 1 empty · 3 with unsaved work$/);
+	assert.match(seen[0]!.title, /^🌿 9 worktrees · 4 done · 1 empty · 1 in progress · 3 with unsaved work$/);
 	assert.ok(seen[0]!.options.every((o) => !o.includes("\n")));
-	assert.equal(seen[0]!.options[0], "🗑 Remove all 3 done worktrees");
+	assert.equal(seen[0]!.options[0], "🗑 Remove all 4 done worktrees");
 	assert.match(seen[0]!.options[1]!, /^⌂ main/);
-	assert.match(notes.at(-1)!, /Removed 3 worktrees and their branches/);
-	assert.equal(copy.rows.length, 4);
+	assert.match(notes.at(-1)!, /Removed 4 worktrees and their branches/);
+	assert.equal(copy.rows.length, 5);
 	assert.ok(!seen[2]!.options.some((o) => o.startsWith("🗑 Remove all")));
 	const left0 = g(repo, "worktree", "list", "--porcelain");
 	assert.doesNotMatch(left0, /merged|\/gone|missing/);
