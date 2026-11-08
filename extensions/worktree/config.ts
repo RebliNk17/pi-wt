@@ -13,6 +13,8 @@ export interface WorktreeConfig {
 	copy: string[];
 	/** Shell command run inside a new worktree after creation (e.g. "npm ci"). */
 	setup?: string;
+	/** `setup` comes from the repo's own `.pi/worktree.json`, so it needs the user's approval before it runs. */
+	setupFromRepo?: boolean;
 	/** "auto": the agent enters/exits worktrees on its own. "on-request": only when asked. */
 	policy: Policy;
 }
@@ -39,18 +41,32 @@ function agentDir(): string {
 
 /** Global `~/.pi/agent/worktree.json`, overridden by `<repo>/.pi/worktree.json`. */
 export function loadConfig(mainRoot: string): WorktreeConfig {
-	const merged = {
-		...DEFAULT_CONFIG,
-		...readJson(path.join(agentDir(), "worktree.json")),
-		...readJson(path.join(mainRoot, ".pi", "worktree.json")),
-	};
+	const repo = readJson(path.join(mainRoot, ".pi", "worktree.json"));
+	const merged = { ...DEFAULT_CONFIG, ...readJson(path.join(agentDir(), "worktree.json")), ...repo };
 	return {
 		root: typeof merged.root === "string" && merged.root ? merged.root : DEFAULT_CONFIG.root,
 		branchPrefix: typeof merged.branchPrefix === "string" ? merged.branchPrefix : "",
 		copy: Array.isArray(merged.copy) ? merged.copy.filter((p) => typeof p === "string") : [],
 		setup: typeof merged.setup === "string" && merged.setup.trim() ? merged.setup : undefined,
+		setupFromRepo: typeof repo.setup === "string" && !!repo.setup.trim(),
 		policy: merged.policy === "on-request" ? "on-request" : "auto",
 	};
+}
+
+// Repo-provided setup commands the user allowed, per repo: { "<mainRoot>": ["npm ci", ...] }.
+const approvalsFile = () => path.join(agentDir(), "worktree-approved.json");
+
+export function isSetupApproved(mainRoot: string, command: string): boolean {
+	const list = (readJson(approvalsFile()) as Record<string, unknown>)[mainRoot];
+	return Array.isArray(list) && list.includes(command);
+}
+
+export function approveSetup(mainRoot: string, command: string): void {
+	const all = readJson(approvalsFile()) as Record<string, unknown>;
+	const list = Array.isArray(all[mainRoot]) ? (all[mainRoot] as unknown[]) : [];
+	all[mainRoot] = [...list, command];
+	fs.mkdirSync(path.dirname(approvalsFile()), { recursive: true });
+	fs.writeFileSync(approvalsFile(), `${JSON.stringify(all, null, 2)}\n`);
 }
 
 /** Patterns from `.worktreeinclude` (same file Claude Code uses), if present. */

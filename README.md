@@ -111,7 +111,7 @@ Settings are read from `~/.pi/agent/worktree.json`. A per-repo `<repo>/.pi/workt
 
 - `root`: where worktrees are created, relative to the main repo. Supports `~` and `{repo}`. The default is `.worktrees`. To keep them out of sight, use `.git/pi-worktrees`. Don't use `.git/worktrees`, which is where git keeps its own worktree metadata.
 - `copy`: gitignore-style patterns for untracked or ignored files to copy into new worktrees. Patterns from a Claude Code style `.worktreeinclude` file are also used.
-- `setup`: a shell command run in each new worktree.
+- `setup`: a shell command run in each new worktree. A `setup` from the repo's own `.pi/worktree.json` could come from anyone who can commit to the repo, so pi-wt shows it and asks once before running it, and remembers your OK for that exact command (in `~/.pi/agent/worktree-approved.json`). Without a UI it is skipped. A `setup` in your global config runs without asking.
 - `policy`:
   - `auto` (the default): the agent uses worktrees for code changes on its own.
   - `on-request`: the agent uses worktrees only when you ask.
