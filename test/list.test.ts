@@ -57,6 +57,16 @@ test("assess", () => {
 	assert.equal(v({ changes: undefined }).verdict, "pending");
 	assert.deepEqual(v({ pr: pr("MERGED") }), { verdict: "done", reasons: ["PR #7 merged"] });
 	assert.equal(v({ pr: pr("CLOSED") }).verdict, "done");
+	// Closed and the remote copy is gone: the local branch may be the only copy left.
+	assert.deepEqual(v({ gone: true, pr: pr("CLOSED") }), {
+		verdict: "progress",
+		reasons: ["PR #7 closed without merging", "branch deleted on remote"],
+	});
+	assert.deepEqual(v({ branch: undefined, upstream: undefined, orphan: true }).reasons, [
+		"detached commits not on any branch",
+	]);
+	assert.deepEqual(v({ branch: undefined, upstream: undefined }).reasons, ["detached HEAD"]);
+	assert.equal(v({ missing: true, orphan: true }).verdict, "unsaved");
 	assert.deepEqual(v({ pr: pr("DRAFT") }).reasons, ["draft PR #7 open"]);
 	// Gone upstream alone proves nothing (issue #5): only `merged` (changes in base) makes it done.
 	assert.deepEqual(v({ gone: true }), { verdict: "progress", reasons: ["branch deleted on remote"] });
@@ -195,6 +205,36 @@ test("collect, classify, clean", async () => {
 	assert.match(left, /later/);
 	assert.equal(g(repo, "branch", "--list", "merged", "gone", "missing", "squashed"), "");
 	assert.match(g(repo, "branch", "--list", "dirty", "fresh", "wip"), /dirty[\s\S]*fresh[\s\S]*wip/);
+	fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test("missing folder and detached HEAD keep their commits", async () => {
+	const { tmp, repo, g } = await fixture();
+	const wt = (n: string) => path.join(repo, ".worktrees", n);
+	const commit = (dir: string, file: string) => {
+		fs.writeFileSync(path.join(dir, file), file);
+		g(dir, "add", file);
+		g(dir, "commit", "-q", "-m", file);
+	};
+	// Folder deleted by hand, branch holds a never-pushed commit.
+	g(repo, "worktree", "add", "-q", "-b", "lostfolder", wt("lostfolder"));
+	commit(wt("lostfolder"), "a.txt");
+	fs.rmSync(wt("lostfolder"), { recursive: true });
+	// Detached HEAD with a commit on no branch, and one sitting on main.
+	g(repo, "worktree", "add", "-q", "--detach", wt("orphan"));
+	commit(wt("orphan"), "o.txt");
+	g(repo, "worktree", "add", "-q", "--detach", wt("onmain"), "main");
+
+	const l = await collect(repo, repo);
+	await fillChanges(l.rows);
+	const at = (n: string) => l.rows.find((r) => r.path.endsWith(`/${n}`))!;
+	assert.equal(assess(at("lostfolder")).verdict, "done");
+	assert.equal(assess(at("orphan")).verdict, "unsaved");
+	assert.equal(assess(at("onmain")).verdict, "progress");
+
+	const res = await removeRows([at("lostfolder")], repo, { deleteBranches: true, force: false });
+	assert.match(res[0]!.message, /branch kept/);
+	assert.match(g(repo, "branch", "--list", "lostfolder"), /lostfolder/);
 	fs.rmSync(tmp, { recursive: true, force: true });
 });
 
