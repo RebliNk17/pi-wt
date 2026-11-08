@@ -330,7 +330,8 @@ export default function piWorktree(pi: ExtensionAPI) {
 		}),
 		executionMode: "sequential",
 		async execute(_id, params, _signal, _onUpdate, ctx) {
-			const text = await exitWorktree(params, ctx);
+			// ponytail: newer pi-ai types StringEnum as unknown; the schema already validates it at runtime.
+			const text = await exitWorktree(params as Parameters<typeof exitWorktree>[0], ctx);
 			return { content: [{ type: "text", text }], details: undefined };
 		},
 	});
